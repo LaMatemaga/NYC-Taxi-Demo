@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: fct_trips
+    description: >
+      One row per taxi trip with pickup and dropoff zone names joined in.
+      Filtered to clean rows only (fare > 0, distance > 0).
+      Contains all dimensions (date, time, location, payment, flags) and raw amounts.
+      IMPORTANT: tip_amount is ONLY recorded for credit card payments (payment_type = '1').
+      Cash tips are NOT included and appear as 0. Any tip analysis MUST filter to card payments only.
+    columns:
+      - name: trip_date
+        tests: [not_null]
+      - name: pickup_zone_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_zones')
+              field: zone_id
+              config:
+                severity: warn
+      - name: dropoff_zone_id
+        tests: [not_null]
+      - name: fare_amount
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: false
+      - name: payment_type_name
+        tests: [not_null]
+      - name: rate_code_name
+        tests: [not_null]
+
+  - name: dim_zones
+    description: Zone dimension table — zone_id, zone_name, borough.
+    columns:
+      - name: zone_id
+        tests: [unique, not_null]
+      - name: zone_name
+        tests: [not_null]

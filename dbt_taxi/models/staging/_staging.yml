@@ -1,0 +1,66 @@
+version: 2
+
+sources:
+  - name: nyc_taxi
+    database: bigquery-public-data
+    schema: new_york_taxi_trips
+    tables:
+      - name: tlc_yellow_trips_2020
+        description: Yellow taxi trip records for 2020.
+      - name: tlc_yellow_trips_2021
+        description: Yellow taxi trip records for 2021.
+      - name: tlc_yellow_trips_2022
+        description: Yellow taxi trip records for 2022.
+      - name: taxi_zone_geom
+        description: TLC taxi zone lookup with zone name, borough, and geometry.
+
+models:
+  - name: stg_yellow_trips
+    description: >
+      Cleaned yellow taxi trips from 2020-2022 (UNION ALL of 3 yearly tables).
+      Junk rows removed (fare > 0, distance > 0, non-null locations).
+      Adds derived dimensions: date parts, time, is_peak, is_weekend, is_holiday,
+      is_card_payment, is_airport_pickup, human-readable payment_type and rate_code labels.
+      IMPORTANT: tip_amount is ONLY recorded for credit card payments. Cash tips appear as 0.
+    columns:
+      - name: pickup_location_id
+        tests: [not_null]
+      - name: dropoff_location_id
+        tests: [not_null]
+      - name: fare_amount
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: false
+      - name: trip_distance
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: false
+      - name: payment_type
+        tests:
+          - accepted_values:
+              values: ['0', '1', '2', '3', '4', '5', '6']
+      - name: tip_amount
+        description: >
+          Tip amount in dollars. Automatically populated for credit card tips.
+          Cash tips are NOT included — they appear as zero.
+      - name: trip_date
+        tests: [not_null]
+      - name: pickup_time
+        tests: [not_null]
+      - name: store_and_fwd_flag
+        description: >
+          Y = trip record held in vehicle memory before sending (no server connection).
+          N = sent in real time.
+
+  - name: stg_taxi_zones
+    description: Taxi zone dimension from TLC zone geometry table.
+    columns:
+      - name: zone_id
+        tests: [unique, not_null]
+      - name: zone_name
+        tests: [not_null]
+      - name: borough
+        tests: [not_null]
