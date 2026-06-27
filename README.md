@@ -138,114 +138,10 @@ Create a schema and two metric views that add the semantic layer on top of `fct_
 CREATE SCHEMA IF NOT EXISTS nyc_taxi.demo;
 ```
 
-**`taxi_metrics`** — detail-level metric view (one row per trip):
+Then run the SQL files in the Databricks SQL editor:
 
-```sql
-CREATE OR REPLACE METRIC VIEW nyc_taxi.demo.taxi_metrics
-AS SELECT
-  -- dimensions (fields)
-  trip_date           COMMENT 'Date of the trip pickup'
-                      SYNONYMS('date', 'day', 'pickup_date'),
-  trip_year           COMMENT 'Year extracted from pickup date (2020-2022)'
-                      SYNONYMS('year'),
-  trip_month          COMMENT 'Month number (1-12) extracted from pickup date'
-                      SYNONYMS('month'),
-  pickup_zone_name    COMMENT 'TLC taxi zone name where the trip started'
-                      SYNONYMS('pickup_zone', 'origin', 'from_zone', 'pickup_location'),
-  dropoff_zone_name   COMMENT 'TLC taxi zone name where the trip ended'
-                      SYNONYMS('dropoff_zone', 'destination', 'to_zone', 'dropoff_location'),
-  pickup_borough      COMMENT 'NYC borough of the pickup zone'
-                      SYNONYMS('borough'),
-  payment_type_name   COMMENT 'Human-readable payment method: Credit card, Cash, No charge, Dispute, Unknown'
-                      SYNONYMS('payment_type', 'payment_method', 'pay_type'),
-  rate_code_name      COMMENT 'Rate code label: Standard, JFK, Newark, Nassau/Westchester, Negotiated, Group'
-                      SYNONYMS('rate_code', 'rate_type'),
-  is_peak             COMMENT 'TRUE if trip started during peak hours (7-10 AM or 4-7 PM on weekdays)'
-                      SYNONYMS('peak_hours', 'rush_hour'),
-  is_weekend          COMMENT 'TRUE if trip was on Saturday or Sunday',
-  is_holiday          COMMENT 'TRUE if trip was on a US federal holiday (2020-2022 calendar)',
-  is_card_payment     COMMENT 'TRUE if paid by credit card. IMPORTANT: tip data is ONLY recorded for credit card payments.',
-  is_airport_pickup   COMMENT 'TRUE if pickup was at an airport zone (JFK or LaGuardia). Based on TLC zone definitions.',
-  pickup_hour         COMMENT 'Hour of day (0-23) of the pickup time',
-  passenger_count     COMMENT 'Number of passengers as recorded by the driver',
-
-  -- measures
-  COUNT(*)            AS total_trips
-                      COMMENT 'Count of individual taxi trips'
-                      SYNONYMS('trip_count', 'num_trips', 'number_of_trips', 'rides'),
-  SUM(fare_amount)    AS total_fare
-                      COMMENT 'Sum of the metered fare amount in USD'
-                      SYNONYMS('total_fare_amount', 'fare_revenue'),
-  AVG(fare_amount)    AS avg_fare
-                      COMMENT 'Average metered fare in USD per trip'
-                      SYNONYMS('average_fare', 'mean_fare'),
-  SUM(tip_amount)     AS total_tips
-                      COMMENT 'Sum of tip amounts in USD. CAVEAT: only credit card tips are recorded. Cash tips appear as $0 — this does NOT mean riders did not tip.'
-                      SYNONYMS('tip_revenue'),
-  AVG(tip_amount)     AS avg_tip
-                      COMMENT 'Average tip amount in USD per trip. CAVEAT: only meaningful for credit card payments. Cash tips are NEVER captured by the taxi meter.'
-                      SYNONYMS('average_tip', 'mean_tip'),
-  AVG(CASE WHEN is_card_payment AND fare_amount > 0 THEN tip_amount / fare_amount * 100 END)
-                      AS avg_tip_pct
-                      COMMENT 'Average tip as a percentage of fare. ONLY for credit card payments with fare > 0. Cash tips are not recorded so cash trips are excluded.'
-                      SYNONYMS('tip_percentage', 'tip_percent', 'tip_rate'),
-  SUM(total_amount)   AS total_revenue
-                      COMMENT 'Sum of total amount charged (fare + extras + tips + tolls + surcharges + airport fee)'
-                      SYNONYMS('revenue', 'gross_revenue'),
-  AVG(trip_distance)  AS avg_distance
-                      COMMENT 'Average trip distance in miles. Trips with 0 distance are already excluded in staging.'
-                      SYNONYMS('average_distance', 'mean_distance'),
-  AVG(trip_duration_minutes) AS avg_duration
-                      COMMENT 'Average trip duration in minutes'
-                      SYNONYMS('average_duration', 'mean_duration'),
-  AVG(CASE WHEN trip_distance > 0.1 THEN fare_amount / trip_distance END)
-                      AS avg_fare_per_mile
-                      COMMENT 'Average fare per mile (USD/mi). Excludes trips under 0.1 miles to avoid distortion from minimum-fare trips.'
-                      SYNONYMS('fare_per_mile', 'cost_per_mile', 'price_per_mile'),
-  SUM(airport_fee)    AS total_airport_fees
-                      COMMENT 'Sum of airport improvement surcharges. This $1.75 fee applies ONLY to pickups at LaGuardia (LGA) and John F. Kennedy (JFK) airports.'
-                      SYNONYMS('airport_revenue', 'airport_surcharge')
-
-FROM nyc_taxi_bq.nyc_taxi_demo.fct_trips;
-```
-
-**`taxi_metrics_monthly`** — monthly aggregation view (fewer dimensions, includes SQL patterns for MoM/YoY):
-
-```sql
-CREATE OR REPLACE METRIC VIEW nyc_taxi.demo.taxi_metrics_monthly
-COMMENT 'Monthly aggregated taxi metrics for trend analysis (MoM, YoY, QoQ).
-Use this view for time-series comparisons. SQL examples for common patterns:
-
--- Month-over-Month (MoM) change:
-SELECT trip_year, trip_month, MEASURE(total_trips) AS trips,
-       LAG(MEASURE(total_trips)) OVER (ORDER BY trip_year, trip_month) AS prev_month,
-       ROUND((MEASURE(total_trips) - LAG(MEASURE(total_trips)) OVER (ORDER BY trip_year, trip_month))
-             / LAG(MEASURE(total_trips)) OVER (ORDER BY trip_year, trip_month) * 100, 2) AS mom_pct
-FROM nyc_taxi.demo.taxi_metrics_monthly GROUP BY trip_year, trip_month ORDER BY 1, 2;
-
--- Year-over-Year (YoY) change:
-SELECT trip_year, MEASURE(total_trips) AS trips,
-       LAG(MEASURE(total_trips)) OVER (ORDER BY trip_year) AS prev_year,
-       ROUND((MEASURE(total_trips) - LAG(MEASURE(total_trips)) OVER (ORDER BY trip_year))
-             / LAG(MEASURE(total_trips)) OVER (ORDER BY trip_year) * 100, 2) AS yoy_pct
-FROM nyc_taxi.demo.taxi_metrics_monthly GROUP BY trip_year ORDER BY 1;'
-AS SELECT
-  trip_year           COMMENT 'Year (2020-2022)' SYNONYMS('year'),
-  trip_month          COMMENT 'Month number (1-12)' SYNONYMS('month'),
-
-  COUNT(*)            AS total_trips
-                      COMMENT 'Count of trips in this month'
-                      SYNONYMS('trip_count', 'rides'),
-  SUM(total_amount)   AS total_revenue
-                      COMMENT 'Total revenue (fare + tips + fees + surcharges) in USD for this month'
-                      SYNONYMS('revenue'),
-  SUM(fare_amount)    AS total_fare
-                      COMMENT 'Total metered fare in USD for this month',
-  SUM(tip_amount)     AS total_tips
-                      COMMENT 'Total tips in USD. CAVEAT: only credit card tips recorded.'
-
-FROM nyc_taxi_bq.nyc_taxi_demo.fct_trips;
-```
+- [`databricks/taxi_metrics.sql`](databricks/taxi_metrics.sql) — detail-level metric view (one row per trip). Includes 15 dimensions and 12 measures with rich comments, synonyms, and caveats.
+- [`databricks/taxi_metrics_monthly.sql`](databricks/taxi_metrics_monthly.sql) — monthly aggregation view for trend analysis. Includes ready-to-use SQL patterns for MoM, YoY, and QoQ comparisons.
 
 ### 5c. Generate a personal access token
 
@@ -325,6 +221,9 @@ The semantic layer (metric views with rich comments, synonyms, and caveats) give
 │       ├── bq.py               # BigQuery client (ADC auth)
 │       ├── databricks.py       # Databricks REST API client
 │       └── gemini_client.py    # Gemini client (2.5 Flash)
+├── databricks/
+│   ├── taxi_metrics.sql        # Detail-level metric view (semantic layer)
+│   └── taxi_metrics_monthly.sql # Monthly metric view for trend analysis
 ├── dbt_taxi/
 │   ├── models/
 │   │   ├── staging/            # stg_yellow_trips, stg_taxi_zones
@@ -333,8 +232,7 @@ The semantic layer (metric views with rich comments, synonyms, and caveats) give
 │   └── dbt_project.yml
 ├── demo/
 │   ├── run_compare.py          # Side-by-side comparison script
-│   ├── questions.md            # Questions with expected behaviors
-│   └── architecture.svg        # Architecture diagram (draw.io compatible)
+│   └── questions.md            # Questions with expected behaviors
 ├── .env.example
 └── pyproject.toml
 ```
