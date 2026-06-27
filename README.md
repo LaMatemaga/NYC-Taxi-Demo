@@ -2,7 +2,7 @@
 
 > Same model. Same data. Radically different results.
 
-This project demonstrates how a **semantic layer** transforms an unreliable AI data agent into a trustworthy one. Two agents built with Gemini 2.5 Flash query the same 90M NYC yellow taxi trips (2020-2022) — one with raw SQL, one through Databricks Unity Catalog metric views. The governed agent scores **7/7**, the raw one **2/7**.
+This project demonstrates how a **semantic layer** transforms an unreliable AI data agent into a trustworthy one. Two agents built with Gemini 2.5 Flash query the same 90M NYC yellow taxi trips (2020-2022) — one with raw SQL, one through Databricks Unity Catalog metric views. The governed agent scores **?/7**, the raw one **?/7**.
 
 The thesis: **you don't need a more powerful model — you need better definitions.**
 
@@ -13,13 +13,13 @@ The thesis: **you don't need a more powerful model — you need better definitio
 │  AGENT A — No context                                    │
 │  Pregunta → Gemini Flash → SQL (guessing) → BigQuery     │
 │                         ↺ retry (up to 5x)               │
-│                                           → 2/7 ❌       │
+│                                           → ?/7 ❌       │
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
 │  AGENT B — Governed                                      │
 │  Pregunta → Gemini Flash → UC Metadata → Databricks SQL  │
-│                          → Federation → BigQuery → 7/7 ✅ │
+│                          → Federation → BigQuery → ?/7✅ │
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
